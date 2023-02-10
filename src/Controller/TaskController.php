@@ -52,7 +52,7 @@ class TaskController extends AbstractController
 
         $taskRepository->save($task, true);
 
-        $response->setStatusCode(Response::HTTP_OK)
+        $response->setStatusCode(Response::HTTP_CREATED)
             ->setData($task->toArray());
         return $response;
     }
