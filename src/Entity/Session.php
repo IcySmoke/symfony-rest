@@ -30,6 +30,9 @@ class Session
     #[ORM\Column(type: Types::DATETIME_MUTABLE)]
     private ?\DateTimeInterface $refreshTokenExpiry = null;
 
+    #[ORM\Column]
+    private ?bool $active = null;
+
     public function getId(): ?int
     {
         return $this->id;
@@ -93,5 +96,27 @@ class Session
         $this->refreshTokenExpiry = $refreshTokenExpiry;
 
         return $this;
+    }
+
+    public function isActive(): ?bool
+    {
+        return $this->active;
+    }
+
+    public function setActive(bool $active): self
+    {
+        $this->active = $active;
+
+        return $this;
+    }
+
+    public function toArray(): array
+    {
+        return [
+            'access_token' => $this->getAccessToken(),
+            'access_token_expiry' => $this->getAccessTokenExpiry(),
+            'refresh_token' => $this->getRefreshToken(),
+            'refresh_token_expiry' => $this->getRefreshTokenExpiry()
+        ];
     }
 }

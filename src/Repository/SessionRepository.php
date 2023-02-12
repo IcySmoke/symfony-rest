@@ -39,6 +39,26 @@ class SessionRepository extends ServiceEntityRepository
         }
     }
 
+    public function getActiveByUser($user): ?Session
+    {
+
+        $session = $this->createQueryBuilder('s')
+            ->where('s.user = :user')
+            ->andWhere('s.active = :active')
+            ->setParameters([
+                ':user' => $user,
+                ':active' => true
+            ])
+            ->getQuery()
+            ->getResult();
+
+        if (isset($session[0])) {
+            return $session[0];
+        }
+
+        return null;
+    }
+
 //    /**
 //     * @return Session[] Returns an array of Session objects
 //     */
