@@ -14,7 +14,7 @@ class Session
     #[ORM\Column]
     private ?int $id = null;
 
-    #[ORM\ManyToOne(inversedBy: 'sessions')]
+    #[ORM\ManyToOne(targetEntity: User::class, inversedBy: 'sessions')]
     #[ORM\JoinColumn(nullable: false)]
     private ?user $user = null;
 

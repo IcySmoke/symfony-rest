@@ -63,7 +63,6 @@ class SecurityController extends AbstractController
 
         $response->setStatusCode(Response::HTTP_CREATED)
             ->setData(['uuid' => $user->getUuid()]);
-
         return $response;
     }
 
@@ -110,14 +109,14 @@ class SecurityController extends AbstractController
             $sessionRepository->save($activeSession, true);
         }
 
-        $accessTokenExiry = date('Y-m-d H:i', strtotime('+1 hours'));
+        $accessTokenExpiry = date('Y-m-d H:i', strtotime('+1 hours'));
         $refreshTokenExpiry = date('Y-m-d H:i', strtotime('+20 days'));
 
         // Generate a JWT access token
         $header = json_encode(['alg' => 'HS256', 'typ' => 'JWT']);
         $payload = json_encode([
             'user_id' => $user->getId(),
-            'exp' => $accessTokenExiry
+            'exp' => $accessTokenExpiry
         ]);
         $signature = hash_hmac('sha256', $header . "." . $payload, getenv('JWT_SECRET'));
         $accessToken = base64_encode($header) . "." . base64_encode($payload) . "." . $signature;
@@ -132,7 +131,7 @@ class SecurityController extends AbstractController
         $session->setUser($user);
         $session->setAccessToken($accessToken);
         $session->setRefreshToken($refreshToken);
-        $session->setAccessTokenExpiry(\DateTime::createFromFormat('Y-m-d H:i', $accessTokenExiry));
+        $session->setAccessTokenExpiry(\DateTime::createFromFormat('Y-m-d H:i', $accessTokenExpiry));
         $session->setRefreshTokenExpiry(\DateTime::createFromFormat('Y-m-d H:i', $refreshTokenExpiry));
         $session->setActive(true);
 
@@ -143,8 +142,109 @@ class SecurityController extends AbstractController
                 'message' => 'Success',
                 'session' => $session->toArray()
             ]);
-
         return $response;
+    }
+
+    #[Route('/logout', name: 'api_security_logout', methods: ['POST'])]
+    public function logout(Request $request, SessionRepository $sessionRepository): JsonResponse
+    {
+        $response = new JsonResponse();
+
+        $accessToken = $request->headers->get('authorization');
+        $session = $sessionRepository->findOneByAccessToken($accessToken);
+
+        if (!$session) {
+            $response->setStatusCode(Response::HTTP_UNAUTHORIZED)
+                ->setContent('Missing or invalid access token');
+            return $response;
+        }
+
+        if (!$session->isActive()) {
+            $response->setStatusCode(Response::HTTP_UNAUTHORIZED)
+                ->setContent('Session already inactive');
+            return $response;
+        }
+
+        $session->setActive(false);
+        $sessionRepository->save($session, true);
+
+        $response->setStatusCode(Response::HTTP_OK)
+            ->setContent('Logged out');
+        return $response;
+    }
+
+    #[Route('/refresh', name: 'api_security_refresh', methods: ['PATCH'])]
+    public function refresh(Request $request, SessionRepository $sessionRepository): JsonResponse
+    {
+        $response = new JsonResponse();
+
+        $accessToken = $request->headers->get('authorization');
+        $session = $sessionRepository->findOneByAccessToken($accessToken);
+
+        if (!$session) {
+            $response->setStatusCode(Response::HTTP_UNAUTHORIZED)
+                ->setContent('Missing or invalid access token');
+            return $response;
+        }
+
+        if (!$session->isActive()) {
+            $response->setStatusCode(Response::HTTP_UNAUTHORIZED)
+                ->setContent('Session expired');
+            return $response;
+        }
+
+        $content = $request->getContent();
+
+        if (!$this->isJson($content)) {
+            $response->setStatusCode(Response::HTTP_NOT_ACCEPTABLE)
+                ->setContent('Request body is not in json format');
+            return $response;
+        }
+
+        $content = json_decode($content);
+
+        if (property_exists($content, 'refresh_token')) {
+            if ($session->getRefreshToken() == $content->refresh_token) {
+                $accessTokenExpiry = date('Y-m-d H:i', strtotime('+1 hours'));
+                $refreshTokenExpiry = date('Y-m-d H:i', strtotime('+20 days'));
+
+                // Generate a JWT access token
+                $header = json_encode(['alg' => 'HS256', 'typ' => 'JWT']);
+                $payload = json_encode([
+                    'user_id' => $session->getUser()->getId(),
+                    'exp' => $accessTokenExpiry
+                ]);
+                $signature = hash_hmac('sha256', $header . "." . $payload, getenv('JWT_SECRET'));
+                $accessToken = base64_encode($header) . "." . base64_encode($payload) . "." . $signature;
+
+                // Generate a refresh token
+                do {
+                    $refreshToken = bin2hex(random_bytes(32));
+                } while ($sessionRepository->findOneByRefreshToken($refreshToken));
+
+                $session->setAccessToken($accessToken);
+                $session->setRefreshToken($refreshToken);
+                $session->setAccessTokenExpiry(\DateTime::createFromFormat('Y-m-d H:i', $accessTokenExpiry));
+                $session->setRefreshTokenExpiry(\DateTime::createFromFormat('Y-m-d H:i', $refreshTokenExpiry));
+
+                $sessionRepository->save($session, true);
+
+                $response->setStatusCode(Response::HTTP_OK)
+                    ->setData([
+                        'message' => 'Success',
+                        'session' => $session->toArray()
+                    ]);
+                return $response;
+            } else {
+                $response->setStatusCode(Response::HTTP_NOT_ACCEPTABLE)
+                    ->setContent('Invalid refresh_token');
+                return $response;
+            }
+        } else {
+            $response->setStatusCode(Response::HTTP_NOT_ACCEPTABLE)
+                ->setContent('Missing refresh_token');
+            return $response;
+        }
     }
 
     private function isJson($string): bool
