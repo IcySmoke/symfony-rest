@@ -4,6 +4,7 @@ namespace App\Controller;
 
 use App\Entity\Task;
 use App\Repository\TaskRepository;
+use App\Service\AuthService;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -13,9 +14,19 @@ use Symfony\Component\Routing\Annotation\Route;
 class TaskController extends AbstractController
 {
     #[Route('/task/new', name: 'api_task_new', methods: ['POST'])]
-    public function new(Request $request, TaskRepository $taskRepository): JsonResponse
+    public function new(Request $request, TaskRepository $taskRepository, AuthService $authService): JsonResponse
     {
         $response = new JsonResponse();
+
+        $authResponse = $authService->authByAccessToken($request->headers->get('authorization'));
+
+        if (is_string($authResponse)) {
+            $response->setStatusCode(Response::HTTP_UNAUTHORIZED)
+                ->setContent($authResponse);
+            return $response;
+        }
+
+        $user = $authResponse;
 
         $content = $request->getContent();
         if (!$this->isJson($content)) {
@@ -48,6 +59,7 @@ class TaskController extends AbstractController
             }
         }
 
+        $task->setUser($user);
         $task->setCompleted(false);
 
         $taskRepository->save($task, true);
@@ -58,11 +70,21 @@ class TaskController extends AbstractController
     }
 
     #[Route('/task/list', name:'api_task_list', methods: ['GET'])]
-    public function list(Request $request, TaskRepository $taskRepository): JsonResponse
+    public function list(Request $request, TaskRepository $taskRepository, AuthService $authService): JsonResponse
     {
         $response = new JsonResponse();
 
-        $tasks = $taskRepository->findAll();
+        $authResponse = $authService->authByAccessToken($request->headers->get('authorization'));
+
+        if (is_string($authResponse)) {
+            $response->setStatusCode(Response::HTTP_UNAUTHORIZED)
+                ->setContent($authResponse);
+            return $response;
+        }
+
+        $user = $authResponse;
+
+        $tasks = $taskRepository->findByUser($user);
         $data = [];
         foreach ($tasks as $task) {
             $data[] = $task->toArray();
@@ -73,35 +95,73 @@ class TaskController extends AbstractController
     }
 
     #[Route('/task/{id}', name: 'api_task_show', methods: ['GET'])]
-    public function show(Request $request, TaskRepository $taskRepository): JsonResponse
+    public function show(Request $request, TaskRepository $taskRepository, AuthService $authService): JsonResponse
     {
         $response = new JsonResponse();
 
-        $task = $taskRepository->find($request->get('id'));
+        $authResponse = $authService->authByAccessToken($request->headers->get('authorization'));
+
+        if (is_string($authResponse)) {
+            $response->setStatusCode(Response::HTTP_UNAUTHORIZED)
+                ->setContent($authResponse);
+            return $response;
+        }
+
+        $user = $authResponse;
+
+        $task = $taskRepository->createQueryBuilder('t')
+            ->where('t.id = :id')
+            ->andWhere('t.user = :user')
+            ->setParameters([
+                ':id' => $request->get('id'),
+                ':user' => $user
+            ])
+            ->getQuery()
+            ->getResult();
 
         if (!$task) {
             $response->setStatusCode(Response::HTTP_NOT_FOUND)
                 ->setContent('Task not found');
         } else {
             $response->setStatusCode(Response::HTTP_OK)
-                ->setData($task->toArray());
+                ->setData($task[0]->toArray());
         }
 
         return $response;
     }
 
     #[Route('/task/edit/{id}', name:'api_task_edit', methods: ['PATCH'])]
-    public function edit(Request $request, TaskRepository $taskRepository): JsonResponse
+    public function edit(Request $request, TaskRepository $taskRepository, AuthService $authService): JsonResponse
     {
         $response = new JsonResponse();
 
-        $task = $taskRepository->find($request->get('id'));
+        $authResponse = $authService->authByAccessToken($request->headers->get('authorization'));
+
+        if (is_string($authResponse)) {
+            $response->setStatusCode(Response::HTTP_UNAUTHORIZED)
+                ->setContent($authResponse);
+            return $response;
+        }
+
+        $user = $authResponse;
+
+        $task = $taskRepository->createQueryBuilder('t')
+            ->where('t.id = :id')
+            ->andWhere('t.user = :user')
+            ->setParameters([
+                ':id' => $request->get('id'),
+                ':user' => $user
+            ])
+            ->getQuery()
+            ->getResult();
 
         if (!$task) {
             $response->setStatusCode(Response::HTTP_NOT_FOUND)
                 ->setContent('Task not found');
             return $response;
         }
+
+        $task = $task[0];
 
         $content = $request->getContent();
         if (!$this->isJson($content)) {
@@ -148,17 +208,37 @@ class TaskController extends AbstractController
     }
 
     #[Route('/task/delete/{id}', name:'api_task_delete', methods: ['DELETE'])]
-    public function delete(Request $request, TaskRepository $taskRepository): JsonResponse
+    public function delete(Request $request, TaskRepository $taskRepository, AuthService $authService): JsonResponse
     {
         $response = new JsonResponse();
 
-        $task = $taskRepository->find($request->get('id'));
+        $authResponse = $authService->authByAccessToken($request->headers->get('authorization'));
+
+        if (is_string($authResponse)) {
+            $response->setStatusCode(Response::HTTP_UNAUTHORIZED)
+                ->setContent($authResponse);
+            return $response;
+        }
+
+        $user = $authResponse;
+
+        $task = $taskRepository->createQueryBuilder('t')
+            ->where('t.id = :id')
+            ->andWhere('t.user = :user')
+            ->setParameters([
+                ':id' => $request->get('id'),
+                ':user' => $user
+            ])
+            ->getQuery()
+            ->getResult();
 
         if (!$task) {
             $response->setStatusCode(Response::HTTP_NOT_FOUND)
-                ->setContent('Task id not found');
+                ->setContent('Task not found');
             return $response;
         }
+
+        $task = $task[0];
 
         $taskRepository->remove($task, true);
 
